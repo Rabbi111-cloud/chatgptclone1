@@ -1,7 +1,10 @@
 import os
 import time
 import requests
-import gradio as gr
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
 
 MODEL = "HuggingFaceH4/zephyr-7b-beta"
 API_URL = f"https://api-inference.huggingface.co/models/{MODEL}"
@@ -11,7 +14,11 @@ HEADERS = {
     "Authorization": f"Bearer {HF_TOKEN}"
 }
 
-def query(payload, retries=6):
+class ChatRequest(BaseModel):
+    message: str
+    history: list = []
+
+def query(payload, retries=5):
     for _ in range(retries):
         response = requests.post(API_URL, headers=HEADERS, json=payload)
         if response.status_code == 200:
@@ -19,11 +26,18 @@ def query(payload, retries=6):
         time.sleep(5)
     return None
 
-def chat(message, history):
+@app.get("/")
+def health():
+    return {"status": "ok"}
+
+@app.post("/chat")
+def chat(req: ChatRequest):
     prompt = "You are a helpful AI assistant.\n\n"
-    for user, bot in history[-3:]:
+
+    for user, bot in req.history[-3:]:
         prompt += f"User: {user}\nAssistant: {bot}\n"
-    prompt += f"User: {message}\nAssistant:"
+
+    prompt += f"User: {req.message}\nAssistant:"
 
     payload = {
         "inputs": prompt,
@@ -35,17 +49,8 @@ def chat(message, history):
     }
 
     result = query(payload)
+
     if not result or not isinstance(result, list):
-        return "⏳ Model is waking up. Please try again."
+        return {"reply": "Model is warming up. Please try again."}
 
-    return result[0]["generated_text"]
-
-gr.ChatInterface(
-    fn=chat,
-    title="ChatGPT Clone (HF Inference API)"
-).launch(
-    server_name="0.0.0.0",
-    server_port=int(os.environ.get("PORT", 10000)),
-    inbrowser=False
-)
-
+    return {"reply": result[0]["generated_text"]}
