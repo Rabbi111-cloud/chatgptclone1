@@ -1,82 +1,51 @@
-import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
+import os
+import time
+import requests
 import gradio as gr
 
-# ==============================
-# Load model (TinyLlama 1.1B)
-# ==============================
-MODEL_NAME = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+MODEL = "HuggingFaceH4/zephyr-7b-beta"
+API_URL = f"https://api-inference.huggingface.co/models/{MODEL}"
+HF_TOKEN = os.environ.get("HF_TOKEN")
 
-print("Loading tokenizer...")
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+HEADERS = {
+    "Authorization": f"Bearer {HF_TOKEN}"
+}
 
-print("Loading model...")
-model = AutoModelForCausalLM.from_pretrained(
-    MODEL_NAME,
-    torch_dtype=torch.float32
-)
+def query(payload, retries=6):
+    for _ in range(retries):
+        response = requests.post(API_URL, headers=HEADERS, json=payload)
+        if response.status_code == 200:
+            return response.json()
+        time.sleep(5)
+    return None
 
-model.eval()
-print("Model loaded successfully.")
-
-# ==============================
-# Parameters
-# ==============================
-MAX_INPUT_TOKENS = 512
-MAX_NEW_TOKENS = 100
-MAX_HISTORY_TURNS = 3  # limit chat history
-
-SYSTEM_PROMPT = "You are a helpful AI assistant."
-
-# ==============================
-# Build prompt safely
-# ==============================
-def build_prompt(message, history):
-    prompt = SYSTEM_PROMPT + "\n\n"
-    history = history[-MAX_HISTORY_TURNS:]
-    for user, bot in history:
+def chat(message, history):
+    prompt = "You are a helpful AI assistant.\n\n"
+    for user, bot in history[-3:]:
         prompt += f"User: {user}\nAssistant: {bot}\n"
     prompt += f"User: {message}\nAssistant:"
-    return prompt
 
-# ==============================
-# Chat function
-# ==============================
-def chat(message, history):
-    prompt = build_prompt(message, history)
+    payload = {
+        "inputs": prompt,
+        "parameters": {
+            "max_new_tokens": 150,
+            "temperature": 0.7,
+            "return_full_text": False
+        }
+    }
 
-    inputs = tokenizer(
-        prompt,
-        return_tensors="pt",
-        truncation=True,
-        max_length=MAX_INPUT_TOKENS
-    )
+    result = query(payload)
+    if not result or not isinstance(result, list):
+        return "⏳ Model is waking up. Please try again."
 
-    with torch.no_grad():
-        output = model.generate(
-            **inputs,
-            max_new_tokens=MAX_NEW_TOKENS,
-            do_sample=True,
-            temperature=0.7,
-            top_p=0.9,
-            pad_token_id=tokenizer.eos_token_id
-        )
+    return result[0]["generated_text"]
 
-    decoded = tokenizer.decode(output[0], skip_special_tokens=True)
-
-    # Extract only the assistant reply
-    if "Assistant:" in decoded:
-        reply = decoded.split("Assistant:")[-1].strip()
-    else:
-        reply = decoded.strip()
-
-    return reply
-
-# ==============================
-# Gradio interface
-# ==============================
 gr.ChatInterface(
     fn=chat,
-    title="ChatGPT Clone (TinyLlama on Render)",
-    description="Stable backend using TinyLlama 1.1B. Works on Render free/paid tier."
-).launch()
+    title="ChatGPT Clone (HF Inference API)"
+).launch(
+    server_name="0.0.0.0",
+    server_port=int(os.environ.get("PORT", 10000)),
+    inbrowser=False
+)
+
