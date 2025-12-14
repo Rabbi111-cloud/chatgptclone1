@@ -1,5 +1,4 @@
-gradio==4.44.0
-torch==2.5.1
-transformers==4.45.2
-accelerate
-numpy<2
+fastapi
+uvicorn
+requests
+
