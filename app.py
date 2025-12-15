@@ -5,56 +5,34 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 
+# ---------------- CONFIG ----------------
+HF_MODEL = "HuggingFaceH4/zephyr-7b-beta"
+HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
+HF_TOKEN = os.getenv("HF_TOKEN")
+
+HEADERS = {
+    "Authorization": f"Bearer {HF_TOKEN}",
+    "Content-Type": "application/json"
+}
+
+# ---------------- APP ----------------
 app = FastAPI()
 
-# Enable CORS so Netlify frontend can call the backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # or list your frontend URL
+    allow_origins=["*"],  # Netlify access
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Hugging Face model settings
-MODEL = "HuggingFaceH4/zephyr-7b-beta"  # free model
-API_URL = f"https://api-inference.huggingface.co/models/{MODEL}"
-HF_TOKEN = os.environ.get("HF_TOKEN")  # Must set in Render env variables
-
-HEADERS = {
-    "Authorization": f"Bearer {HF_TOKEN}"
-}
-
-# Request body
+# ---------------- SCHEMA ----------------
 class ChatRequest(BaseModel):
     message: str
+    history: list = []
 
-# Query HF Inference API
-def query(payload, retries=5):
-    for _ in range(retries):
-        response = requests.post(API_URL, headers=HEADERS, json=payload)
-        if response.status_code == 200:
-            return response.json()
-        time.sleep(5)
-    return None
-
-# Health check
-@app.get("/")
-def health():
-    return {"status": "ok"}
-
-# Chat endpoint
-@app.post("/chat")
-def chat(req: ChatRequest):
-    prompt = f"""
-You are ChatGPT, a helpful and friendly AI assistant.
-Answer in plain English. 
-Do NOT write code unless asked.
-Do NOT output JSON, JavaScript, or HTML.
-
-User: {req.message}
-Assistant:
-""".strip()
-
+# ---------------- HF QUERY ----------------
+def query_hf(prompt, retries=15, delay=5):
     payload = {
         "inputs": prompt,
         "parameters": {
@@ -64,9 +42,42 @@ Assistant:
         }
     }
 
-    result = query(payload)
+    for attempt in range(retries):
+        response = requests.post(HF_API_URL, headers=HEADERS, json=payload)
 
-    if not result or not isinstance(result, list):
-        return {"reply": "The model is waking up. Please try again in a few seconds."}
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, list):
+                return data[0]["generated_text"]
 
-    return {"reply": result[0]["generated_text"].strip()}
+        print(f"Model sleeping... retry {attempt+1}/{retries}")
+        time.sleep(delay)
+
+    return "⚠️ Model is still waking up. Please try again."
+
+# ---------------- ROUTES ----------------
+@app.get("/")
+def home():
+    return {"status": "Backend running"}
+
+@app.post("/chat")
+def chat(req: ChatRequest):
+    prompt = "You are a helpful AI assistant.\n"
+
+    for user, bot in req.history[-3:]:
+        prompt += f"User: {user}\nAssistant: {bot}\n"
+
+    prompt += f"User: {req.message}\nAssistant:"
+
+    reply = query_hf(prompt)
+    return {"reply": reply}
+
+# ---------------- WAKE MODEL ----------------
+@app.on_event("startup")
+def wake_model():
+    print("Waking Hugging Face model...")
+    try:
+        query_hf("Hello", retries=5, delay=3)
+    except:
+        pass
+
