@@ -2,8 +2,8 @@ import os
 import time
 import requests
 from fastapi import FastAPI
-from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 # ---------------- CONFIG ----------------
 HF_MODEL = "HuggingFaceH4/zephyr-7b-beta"
@@ -20,19 +20,17 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Netlify access
-    allow_credentials=True,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ---------------- SCHEMA ----------------
 class ChatRequest(BaseModel):
     message: str
     history: list = []
 
-# ---------------- HF QUERY ----------------
-def query_hf(prompt, retries=15, delay=5):
+# ---------------- HF CALL ----------------
+def call_hf(prompt):
     payload = {
         "inputs": prompt,
         "parameters": {
@@ -42,42 +40,44 @@ def query_hf(prompt, retries=15, delay=5):
         }
     }
 
-    for attempt in range(retries):
-        response = requests.post(HF_API_URL, headers=HEADERS, json=payload)
+    for i in range(20):
+        r = requests.post(HF_API_URL, headers=HEADERS, json=payload)
 
-        if response.status_code == 200:
-            data = response.json()
-            if isinstance(data, list):
+        # SUCCESS
+        if r.status_code == 200:
+            data = r.json()
+            if isinstance(data, list) and "generated_text" in data[0]:
                 return data[0]["generated_text"]
 
-        print(f"Model sleeping... retry {attempt+1}/{retries}")
-        time.sleep(delay)
+        # MODEL LOADING
+        time.sleep(3)
 
-    return "⚠️ Model is still waking up. Please try again."
+    # NEVER RETURN EMPTY
+    return "⚠️ The AI is busy right now. Please send your message again."
 
 # ---------------- ROUTES ----------------
 @app.get("/")
-def home():
-    return {"status": "Backend running"}
+def health():
+    return {"status": "OK"}
 
 @app.post("/chat")
 def chat(req: ChatRequest):
-    prompt = "You are a helpful AI assistant.\n"
+    prompt = "You are a helpful assistant.\n\n"
 
-    for user, bot in req.history[-3:]:
-        prompt += f"User: {user}\nAssistant: {bot}\n"
+    for u, a in req.history[-3:]:
+        prompt += f"User: {u}\nAssistant: {a}\n"
 
     prompt += f"User: {req.message}\nAssistant:"
 
-    reply = query_hf(prompt)
-    return {"reply": reply}
+    reply = call_hf(prompt)
 
-# ---------------- WAKE MODEL ----------------
+    return {
+        "reply": reply
+    }
+
+# ---------------- WARMUP ----------------
 @app.on_event("startup")
-def wake_model():
-    print("Waking Hugging Face model...")
-    try:
-        query_hf("Hello", retries=5, delay=3)
-    except:
-        pass
+def warmup():
+    print("Warming model...")
+    call_hf("Hello")
 
