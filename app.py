@@ -6,16 +6,16 @@ import os
 
 app = FastAPI()
 
-# Allow Netlify frontend
+# Allow frontend requests
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"]
 )
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-MODEL = "openrouter/gpt-4o-mini"  # reliable free model
+MODEL = "mistralai/mistral-7b-instruct"
 
 class ChatRequest(BaseModel):
     message: str
@@ -24,8 +24,8 @@ class ChatRequest(BaseModel):
 @app.post("/chat")
 def chat(req: ChatRequest):
     messages = [{"role": "system", "content": "You are a helpful AI assistant."}]
-
-    # Keep last 5 messages in history
+    
+    # Include last 5 messages in history
     for user, bot in req.history[-5:]:
         messages.append({"role": "user", "content": user})
         messages.append({"role": "assistant", "content": bot})
@@ -49,8 +49,8 @@ def chat(req: ChatRequest):
         response.raise_for_status()
         data = response.json()
         return {"reply": data["choices"][0]["message"]["content"]}
-
+    
     except Exception as e:
-        # Return friendly error to frontend
+        # Friendly error to frontend
         return {"reply": "⚠️ AI temporarily unavailable. Please try again."}
 
