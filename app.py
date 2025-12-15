@@ -6,7 +6,7 @@ import os
 
 app = FastAPI()
 
-# Allow frontend requests
+# Allow Netlify frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,7 +15,7 @@ app.add_middleware(
 )
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-MODEL = "mistralai/mistral-7b-instruct"
+MODEL = "mistralai/mistral-7b-instruct"  # free, reliable model
 
 class ChatRequest(BaseModel):
     message: str
@@ -25,7 +25,7 @@ class ChatRequest(BaseModel):
 def chat(req: ChatRequest):
     messages = [{"role": "system", "content": "You are a helpful AI assistant."}]
     
-    # Include last 5 messages in history
+    # Keep last 5 messages in history
     for user, bot in req.history[-5:]:
         messages.append({"role": "user", "content": user})
         messages.append({"role": "assistant", "content": bot})
@@ -48,9 +48,21 @@ def chat(req: ChatRequest):
         )
         response.raise_for_status()
         data = response.json()
-        return {"reply": data["choices"][0]["message"]["content"]}
-    
+
+        # Safely parse AI reply
+        reply = None
+        if "choices" in data and len(data["choices"]) > 0:
+            choice = data["choices"][0]
+            if "message" in choice and "content" in choice["message"]:
+                reply = choice["message"]["content"]
+            elif "text" in choice:
+                reply = choice["text"]
+
+        if not reply:
+            reply = "⚠️ AI temporarily unavailable. Please try again."
+
+        return {"reply": reply}
+
     except Exception as e:
-        # Friendly error to frontend
         return {"reply": "⚠️ AI temporarily unavailable. Please try again."}
 
