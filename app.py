@@ -47,5 +47,10 @@ def chat(req: ChatRequest):
             timeout=30
         )
         response.raise_for_status()
-        data = response.json
+        data = response.json()
+        return {"reply": data["choices"][0]["message"]["content"]}
+
+    except Exception as e:
+        # Return friendly error to frontend
+        return {"reply": "⚠️ AI temporarily unavailable. Please try again."}
 
