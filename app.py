@@ -1,23 +1,12 @@
-import os
-import time
-import requests
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import requests
+import os
 
-# ---------------- CONFIG ----------------
-HF_MODEL = "HuggingFaceH4/zephyr-7b-beta"
-HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
-HF_TOKEN = os.getenv("HF_TOKEN")
-
-HEADERS = {
-    "Authorization": f"Bearer {HF_TOKEN}",
-    "Content-Type": "application/json"
-}
-
-# ---------------- APP ----------------
 app = FastAPI()
 
+# Allow Netlify frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -25,59 +14,40 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+OPENROUTER_API_KEY = os.getenv("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")
+MODEL = "mistralai/mistral-7b-instruct"
+
 class ChatRequest(BaseModel):
     message: str
     history: list = []
 
-# ---------------- HF CALL ----------------
-def call_hf(prompt):
-    payload = {
-        "inputs": prompt,
-        "parameters": {
-            "max_new_tokens": 200,
-            "temperature": 0.7,
-            "return_full_text": False
-        }
-    }
-
-    for i in range(20):
-        r = requests.post(HF_API_URL, headers=HEADERS, json=payload)
-
-        # SUCCESS
-        if r.status_code == 200:
-            data = r.json()
-            if isinstance(data, list) and "generated_text" in data[0]:
-                return data[0]["generated_text"]
-
-        # MODEL LOADING
-        time.sleep(3)
-
-    # NEVER RETURN EMPTY
-    return "⚠️ The AI is busy right now. Please send your message again."
-
-# ---------------- ROUTES ----------------
-@app.get("/")
-def health():
-    return {"status": "OK"}
-
 @app.post("/chat")
 def chat(req: ChatRequest):
-    prompt = "You are a helpful assistant.\n\n"
+    messages = [{"role": "system", "content": "You are a helpful assistant."}]
 
-    for u, a in req.history[-3:]:
-        prompt += f"User: {u}\nAssistant: {a}\n"
+    for user, bot in req.history[-5:]:
+        messages.append({"role": "user", "content": user})
+        messages.append({"role": "assistant", "content": bot})
 
-    prompt += f"User: {req.message}\nAssistant:"
+    messages.append({"role": "user", "content": req.message})
 
-    reply = call_hf(prompt)
+    response = requests.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json"
+        },
+        json={
+            "model": MODEL,
+            "messages": messages,
+            "temperature": 0.7
+        },
+        timeout=30
+    )
 
-    return {
-        "reply": reply
-    }
+    if response.status_code != 200:
+        return {"reply": "⚠️ AI temporarily unavailable. Please try again."}
 
-# ---------------- WARMUP ----------------
-@app.on_event("startup")
-def warmup():
-    print("Warming model...")
-    call_hf("Hello")
+    data = response.json()
+    return {"reply": data["choices"][0]["message"]["content"]}
 
