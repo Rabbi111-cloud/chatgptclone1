@@ -14,7 +14,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-OPENROUTER_API_KEY = os.getenv("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")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 MODEL = "mistralai/mistral-7b-instruct"
 
 class ChatRequest(BaseModel):
