@@ -65,4 +65,3 @@ def chat(req: ChatRequest):
 
     except Exception as e:
         return {"reply": "⚠️ AI temporarily unavailable. Please try again."}
-
