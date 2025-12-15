@@ -15,7 +15,7 @@ app.add_middleware(
 )
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-MODEL = "mistralai/mistral-7b-instruct"
+MODEL = "openrouter/gpt-4o-mini"  # reliable free model
 
 class ChatRequest(BaseModel):
     message: str
@@ -23,31 +23,29 @@ class ChatRequest(BaseModel):
 
 @app.post("/chat")
 def chat(req: ChatRequest):
-    messages = [{"role": "system", "content": "You are a helpful assistant."}]
+    messages = [{"role": "system", "content": "You are a helpful AI assistant."}]
 
+    # Keep last 5 messages in history
     for user, bot in req.history[-5:]:
         messages.append({"role": "user", "content": user})
         messages.append({"role": "assistant", "content": bot})
 
     messages.append({"role": "user", "content": req.message})
 
-    response = requests.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json"
-        },
-        json={
-            "model": MODEL,
-            "messages": messages,
-            "temperature": 0.7
-        },
-        timeout=30
-    )
-
-    if response.status_code != 200:
-        return {"reply": "⚠️ AI temporarily unavailable. Please try again."}
-
-    data = response.json()
-    return {"reply": data["choices"][0]["message"]["content"]}
+    try:
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": MODEL,
+                "messages": messages,
+                "temperature": 0.7
+            },
+            timeout=30
+        )
+        response.raise_for_status()
+        data = response.json
 
