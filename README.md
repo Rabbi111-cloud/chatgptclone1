@@ -29,8 +29,8 @@ This project uses **OpenRouter’s free AI models** for AI responses, so it’s 
 
 ## Demo
 
-**Backend URL:** `https://your-backend.onrender.com`  
-**Frontend URL:** `https://your-frontend.netlify.app`  
+**Backend URL:** `https://chatgptclone1-12.onrender.com`  
+**Frontend URL:** `super-tapioca-ab48df.netlify.app`  
 
 ---
 
